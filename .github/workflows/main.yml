@@ -5,10 +5,18 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Compile
+
+      - name: Lista file
         run: |
-          g++ twks_injector.cpp -o twks_injector.exe -lkernel32 -static -O2
-          g++ -shared twks_executor.cpp -o twks_executor.dll -lkernel32 -static -O2
+          dir
+          dir /s /b *.cpp
+
+      - name: Compile injector
+        run: g++ twks_injector.cpp -o twks_injector.exe -lkernel32 -static -O2
+
+      - name: Compile DLL
+        run: g++ -shared twks_executor.cpp -o twks_executor.dll -lkernel32 -static -O2
+
       - name: Upload
         uses: actions/upload-artifact@v4
         with:
