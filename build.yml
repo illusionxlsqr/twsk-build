@@ -1,0 +1,47 @@
+name: TWKS Build
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - run: |
+          mkdir build; cd build
+          $inj = @'
+          #include <windows.h>
+          #include <tlhelp32.h>
+          #include <iostream>
+          using namespace std;
+          DWORD GetPID(const wchar_t* n){HANDLE s=CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS,0);PROCESSENTRY32W e;e.dwSize=sizeof(e);if(Process32FirstW(s,&e)){do{if(!_wcsicmp(e.szExeFile,n)){CloseHandle(s);return e.th32ProcessID;}}while(Process32NextW(s,&e));}CloseHandle(s);return 0;}
+          int main(){cout<<"TWKS Injector v3.2.1"<<endl;cout<<"[*] Waiting..."<<endl;DWORD pid=0;while(!(pid=GetPID(L"RobloxPlayerBeta.exe")))Sleep(500);cout<<"[+] PID:"<<pid<<endl;HANDLE h=OpenProcess(PROCESS_ALL_ACCESS,FALSE,pid);if(!h){cout<<"[-] Fail";cin.get();return 1;}wchar_t p[MAX_PATH];GetCurrentDirectoryW(MAX_PATH,p);wcscat(p,L"\\twks_executor.dll");size_t sz=(wcslen(p)+1)*2;void* m=VirtualAllocEx(h,0,sz,MEM_COMMIT|MEM_RESERVE,PAGE_READWRITE);WriteProcessMemory(h,m,p,sz,0);HANDLE t=CreateRemoteThread(h,0,0,(LPTHREAD_START_ROUTINE)GetProcAddress(GetModuleHandleW(L"kernel32.dll"),"LoadLibraryW"),m,0,0);WaitForSingleObject(t,10000);DWORD r=0;GetExitCodeThread(t,&r);VirtualFreeEx(h,m,0,MEM_RELEASE);CloseHandle(t);CloseHandle(h);if(r)cout<<"[+] INJECTED!"<<endl;else cout<<"[-] FAIL"<<endl;cin.get();return 0;}
+          '@
+          [System.IO.File]::WriteAllText("$pwd\inj.cpp",$inj,[System.Text.Encoding]::ASCII)
+          $dll = @'
+          #include <windows.h>
+          #include <cstdint>
+          #include <cstdio>
+          uintptr_t base=0;
+          DWORD WINAPI Pipe(LPVOID){HANDLE p=CreateNamedPipeW(L"\\\\.\\pipe\\TWKSExecutor",PIPE_ACCESS_DUPLEX,PIPE_TYPE_MESSAGE|PIPE_READMODE_MESSAGE|PIPE_WAIT,1,65536,65536,0,NULL);if(p==INVALID_HANDLE_VALUE)return 1;char buf[65536];while(1){if(ConnectNamedPipe(p,NULL)){DWORD r;if(ReadFile(p,buf,65535,&r,NULL)){buf[r]=0;OutputDebugStringA(buf);DWORD w;WriteFile(p,"OK",2,&w,NULL);}DisconnectNamedPipe(p);}}return 0;}
+          DWORD WINAPI Init(LPVOID){Sleep(1000);base=(uintptr_t)GetModuleHandleW(L"RobloxPlayerBeta.exe");char m[128];sprintf(m,"[TWKS] 0x%llX",(unsigned long long)base);OutputDebugStringA(m);CreateThread(0,0,Pipe,0,0,0);return 0;}
+          extern "C" __declspec(dllexport) BOOL APIENTRY DllMain(HMODULE h,DWORD r,LPVOID){if(r==DLL_PROCESS_ATTACH){DisableThreadLibraryCalls(h);CreateThread(0,0,Init,0,0,0);}return TRUE;}
+          '@
+          [System.IO.File]::WriteAllText("$pwd\dll.cpp",$dll,[System.Text.Encoding]::ASCII)
+        shell: pwsh
+
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Compila EXE
+        run: cd build && cl /EHsc /O2 inj.cpp /Fe:twks_injector.exe /link user32.lib /SUBSYSTEM:CONSOLE
+        shell: cmd
+
+      - name: Compila DLL
+        run: cd build && cl /LD /EHsc /O2 dll.cpp /Fe:twks_executor.dll
+        shell: cmd
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: TWKS-EXE-DLL
+          path: build/*.exe,build/*.dllbuild.yml
